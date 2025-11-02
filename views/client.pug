@@ -2,7 +2,7 @@ extends layout
 
 block content
   main
-    h2 내담자 
+    h2 #{name} 님 - 내담자 
     script.
       window.APP = { name: !{JSON.stringify(name)}, room: !{JSON.stringify(room)}, role: "client" };
 

@@ -8,6 +8,7 @@ socket.emit("join", { name: name, room: room, role: "counselor" });
 const messagesEl = document.getElementById("messages");
 const chatInputEl = document.getElementById("message");
 const sendBtn = document.getElementById("send");
+const genAiBtn = document.getElementById("gen-ai");
 const draftEl = document.getElementById("draft");
 const instructionEl = document.getElementById("instruction");
 const refineBtn = document.getElementById("refine");
@@ -19,6 +20,12 @@ sendBtn.addEventListener("click", () => {
   if (!txt) return;
   socket.emit("counselor_send_final", txt);
   chatInputEl.value = "";
+});
+
+// 새로 추가: AI 응답 생성 버튼
+genAiBtn.addEventListener("click", () => {
+  aiStatusEl.textContent = "AI 응답 생성 중...";
+  socket.emit("counselor_generate");
 });
 
 socket.on("message", (d) => {

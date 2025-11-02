@@ -1,3 +1,7 @@
+:root {
+  font-size: 15px;
+}
+
 /* 공통 여백/폭 */
 main {
   max-width: 1100px;
@@ -6,7 +10,6 @@ main {
 
 /* 패널 박스 (큰 네모) */
 .panel {
-  border: 1px solid #e5e7eb;
   border-radius: 12px;
   padding: 12px;
   height: 78vh;
@@ -19,7 +22,6 @@ main {
 .messages-box {
   flex: 1;
   overflow: auto;
-  border: 1px solid #eee;
   border-radius: 8px;
   padding: 10px;
 }
@@ -62,7 +64,6 @@ main {
 pre.draft {
   white-space: pre-wrap;
   background: #fafafa;
-  border: 1px solid #eee;
   border-radius: 8px;
   padding: 10px;
   min-height: 120px;

@@ -15,28 +15,19 @@ const server = http.createServer(app);
 const io = new Server(server);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// 세션 (개발용 기본 메모리 스토어)
-// 배포 시에는 Redis 등 외부 스토어 권장, 프록시/쿠키 설정 필요
 const sessionMiddleware = session({
-  secret: process.env.SESSION_SECRET || "dev-secret",
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: true,
-  cookie: { sameSite: "lax" },
 });
 app.use(sessionMiddleware);
+io.engine.use((req, res, next) => sessionMiddleware(req, res, next));
 
-// Socket.IO에 세션 공유
-io.engine.use((req, res, next) => {
-  sessionMiddleware(req, res, next);
-});
-
-// Pug + 정적
 app.set("view engine", "pug");
 app.set("views", path.join(__dirname, "views"));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// 유틸: 20자리 방 코드 생성 (A-Z, a-z, 0-9)
 function generateRoomCode(len = 20) {
   const chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -46,51 +37,71 @@ function generateRoomCode(len = 20) {
   return out;
 }
 
-// 방 상태(최소)
+/** 방 상태
+ * rooms[room] = {
+ *   clientId: string|null,
+ *   counselorId: string|null,
+ *   lastClientText: string,
+ *   conversationId: string|null, // conv_...
+ * }
+ */
 const rooms = Object.create(null);
 function ensureRoom(room) {
   if (!rooms[room]) {
-    rooms[room] = { clientId: null, counselorId: null, lastClientText: "" };
+    rooms[room] = {
+      clientId: null,
+      counselorId: null,
+      lastClientText: "",
+      conversationId: null,
+    };
   }
   return rooms[room];
 }
 
-// 라우팅
 app.get("/", (_, res) => {
   res.render("home", { title: "상담 플랫폼 – 시작하기" });
 });
 
-// 새 방 생성: 코드 1회 노출 + 세션 저장
-app.post("/create", (req, res) => {
+// 방 생성: 여기서만 Conversation 생성
+app.post("/create", async (req, res) => {
   const { role, name } = req.body;
   if (!role || !name) return res.status(400).send("필수값 누락");
 
   const room = generateRoomCode(20);
-  ensureRoom(room);
+  const r = ensureRoom(room);
 
-  // 세션에 저장
+  try {
+    const conv = await openai.conversations.create({});
+    r.conversationId = conv.id;
+    if (!r.conversationId) {
+      return res.status(500).send("대화 생성 실패");
+    }
+  } catch (e) {
+    console.error("Conversation create error:", e);
+    return res.status(500).send("대화를 생성할 수 없습니다.");
+  }
+
   req.session.name = name;
   req.session.role = role;
   req.session.room = room;
 
-  // 코드 1회 노출 페이지 렌더(여기서만 보여줌)
-  return res.render("code", {
-    title: "방 코드 안내",
-    code: room,
-    name,
-    role,
-  });
+  return res.render("code", { title: "방 코드 안내", code: room, name, role });
 });
 
-// 코드 참여: 세션 저장 후 /room으로 이동
+// 기존 방 입장: Conversation 절대 생성 금지 (없으면 에러)
 app.post("/enter", (req, res) => {
   const { role, name, room } = req.body;
   if (!role || !name || !room) return res.status(400).send("필수값 누락");
 
-  // 방 존재 보장 (없으면 생성 혹은 에러 처리 선택 가능)
-  ensureRoom(room);
+  const r = rooms[room];
+  if (!r) {
+    return res.status(404).send("존재하지 않는 방 코드입니다.");
+  }
+  if (!r.conversationId) {
+    // 복구용 생성도 하지 않음: 명시적으로 실패 처리
+    return res.status(500).send("이 방의 대화가 준비되지 않았습니다.");
+  }
 
-  // 세션에 저장
   req.session.name = name;
   req.session.role = role;
   req.session.room = room;
@@ -98,24 +109,16 @@ app.post("/enter", (req, res) => {
   return res.redirect("/room");
 });
 
-// 세션 기반 방 입장 (뷰 렌더)
 app.get("/room", (req, res) => {
   const { name, role, room } = req.session;
-
-  if (!name || !role || !room || !rooms[room]) {
-    return res.redirect("/");
-  }
-
-  // 코드는 화면/타이틀에서 노출하지 않음
-  if (role === "client") {
+  if (!name || !role || !room || !rooms[room]) return res.redirect("/");
+  if (role === "client")
     return res.render("client", { name, room, title: "내담자" });
-  }
   return res.render("counselor", { name, room, title: "상담사" });
 });
 
-// 소켓
+// ===== Socket =====
 io.on("connection", (socket) => {
-  // 세션에서 사용자 상태 복원
   const sess =
     socket.request && socket.request.session ? socket.request.session : null;
   const name = sess && sess.name ? sess.name : undefined;
@@ -125,22 +128,15 @@ io.on("connection", (socket) => {
   if (name && room && role) {
     socket.data = { name, room, role };
     socket.join(room);
-
     const r = ensureRoom(room);
     if (role === "client") r.clientId = socket.id;
     if (role === "counselor") r.counselorId = socket.id;
-
-    io.to(room).emit("system", {
-      text: name + "님(" + role + ")이 입장했습니다.",
-    });
+    io.to(room).emit("system", { text: `${name}님(${role})이 입장했습니다.` });
   }
 
-  // (호환성) 클라이언트가 기존처럼 join 이벤트를 보내도 무시하거나 세션 재확인
-  socket.on("join", () => {
-    // 이미 세션으로 합류 완료. 필요 시 세션 검사 후 보강만.
-  });
+  socket.on("join", () => {});
 
-  // 내담자 → 메시지 → 현재 턴만으로 AI 초안(상담사 전용)
+  // 내담자 메시지 → 화면 브로드캐스트 + Conversation에 user 아이템 적재
   socket.on("client_message", async (text) => {
     const data = socket.data || {};
     const sName = data.name;
@@ -150,55 +146,86 @@ io.on("connection", (socket) => {
 
     const r = ensureRoom(sRoom);
 
-    // 본 채팅에 표시
     io.to(sRoom).emit("message", {
       name: sName,
       role: "client",
-      text: text,
+      text,
       ts: Date.now(),
     });
 
-    // 마지막 내담자 발화 저장(상담사 재지시용)
     r.lastClientText = text;
+
+    try {
+      if (r.conversationId) {
+        await openai.conversations.items.create(r.conversationId, {
+          role: "user",
+          content: [{ type: "input_text", text }],
+        });
+      }
+    } catch (e) {
+      console.error("Add user item error:", e);
+    }
+  });
+
+  // 상담사: “AI 응답 생성” → Conversation 기반 Responses 호출
+  socket.on("counselor_generate", async () => {
+    const data = socket.data;
+    const sRoom = data.room;
+    const sRole = data.role;
+    if (sRole !== "counselor" || !sRoom) return;
+
+    const r = ensureRoom(sRoom);
+    const { conversationId, lastClientText } = r;
+
+    if (!lastClientText) {
+      if (r.counselorId)
+        io.to(r.counselorId).emit("ai_error", {
+          message: "생성할 내담자 발화가 없습니다.",
+        });
+      return;
+    }
+    if (!conversationId) {
+      if (r.counselorId)
+        io.to(r.counselorId).emit("ai_error", {
+          message: "대화가 준비되지 않았습니다.",
+        });
+      return;
+    }
 
     try {
       const resp = await openai.responses.create({
         model: "gpt-5",
+        instructions: process.env.INSTRUCTION_STRING,
+        // SDK 버전에 따라 아래 중 하나가 유효합니다.
+        conversation: { id: conversationId }, // 보편적
+        // conversation_id: conversationId,    // 일부 SDK/버전
         input: [
           {
-            role: "system",
-            content:
-              "당신은 바이런 케이티의 ‘네 가지 질문(The Work)’ 접근을 따르는 심리상담 보조자입니다. " +
-              "공감적·비판단적 톤으로 2~4문장 한국어 답안을 제안하세요. 자/타해 위험 시 안전을 우선하세요. " +
-              "반드시 한 번의 발화에 '네 가지 질문'의 한 단계만 진행하세요. 한번에 4개의 질문을 모두 설명하지 말고, 각각을 차례차례 물어보세요.\n" +
-              "\n" +
-              "네 가지 질문\n" +
-              "1) 그게 사실인가요?\n" +
-              "2) 당신은 그 생각이 정말로 사실인지 확실히 알 수 있나요?\n" +
-              "3) 그 생각을 믿을 때, 당신은 어떻게 반응하나요? (신체 반응/감정/자기·타인에 대한 태도/과거·미래 행동 등)\n" +
-              "4) 그 생각이 없다면, 당신은 누구일까요? (그 생각이 사라졌을 때의 당신을 상상)\n" +
-              "\n" +
-              "‘뒤집어 보기’(Turnaround): 원래 문장을 다양한 방향으로 바꾸고, 그 대안도 사실일 수 있는 근거를 3가지 정도 찾습니다. 예) " +
-              "자신에게로: “그는 나를 무시한다” → “나는 나를 무시한다.” / " +
-              "상대에게로: “그는 나를 무시한다” → “나는 그를 무시한다.” / " +
-              "반대로: “그는 나를 무시한다” → “그는 나를 존중한다.”",
+            role: "user",
+            content: `내담자 최신 메시지 참조: """${lastClientText}"""`,
           },
           {
-            role: "user",
-            content:
-              '내담자 메시지: """' +
-              text +
-              '"""\n' +
-              "상담사가 그대로 전송할 수 있는 한국어 응답 초안을 2~4문장으로 작성하세요.",
+            role: "developer",
+            content: process.env.DEV_INSTRUCTION_STRING,
           },
         ],
+        store: true,
       });
 
       const draft =
         resp && resp.output_text ? resp.output_text : "(응답 생성 실패)";
-      if (r.counselorId) {
-        io.to(r.counselorId).emit("ai_draft", { text: draft, ts: Date.now() });
+
+      try {
+        await openai.conversations.items.create(conversationId, {
+          role: "assistant",
+          content: [{ type: "output_text", text: draft }],
+        });
+      } catch (e2) {
+        console.error("Add assistant item error:", e2);
       }
+
+      if (r.counselorId)
+        io.to(r.counselorId).emit("ai_draft", { text: draft, ts: Date.now() });
     } catch (err) {
       const msg = err && err.message ? err.message : "AI 응답 생성 오류";
       if (r.counselorId)
@@ -207,9 +234,9 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 상담사 → 수정 지시(마지막 내담자 발화만 사용)
+  // 상담사: 수정 지시 → user 아이템 적재 후 같은 Conversation으로 재생성
   socket.on("counselor_refine", async (payload) => {
-    const data = socket.data || {};
+    const data = socket.data;
     const sName = data.name;
     const sRoom = data.room;
     const sRole = data.role;
@@ -218,33 +245,55 @@ io.on("connection", (socket) => {
     if (sRole !== "counselor" || !sRoom || !instruction) return;
 
     const r = ensureRoom(sRoom);
+    const { conversationId, lastClientText } = r;
+    if (!conversationId) {
+      if (r.counselorId)
+        io.to(r.counselorId).emit("ai_error", {
+          message: "대화가 준비되지 않았습니다.",
+        });
+      return;
+    }
+
     try {
-      const last = r.lastClientText || "";
+      // 지시를 user 아이템으로 쌓기
+      await openai.conversations.items.create(conversationId, {
+        role: "user",
+        content: [
+          { type: "input_text", text: `상담사 지시: """${instruction}"""` },
+        ],
+      });
+
+      // 같은 대화 문맥으로 재생성
       const resp = await openai.responses.create({
         model: "gpt-5",
+        instructions: `${process.env.INSTRUCTION_STRING} 상담사의 피드백을 반영해 2~4문장으로 개선하세요.`,
+        conversation: { id: conversationId }, // or conversation_id
         input: [
           {
-            role: "system",
-            content:
-              "당신은 ‘바이런 케이티 네 가지 질문’ 접근을 따르는 상담 보조자입니다. " +
-              "상담사의 피드백을 반영해 2~4문장 한국어 답안을 제시하세요. 위험 시 안전을 우선하세요.",
+            role: "user",
+            content: `내담자 메시지: """${lastClientText || ""}"""`,
           },
           {
-            role: "user",
-            content:
-              '내담자 메시지: """' +
-              last +
-              '"""\n' +
-              '상담사 지시: """' +
-              instruction +
-              '"""\n' +
-              "위 철학을 유지하며 답안을 개선해 주세요.",
+            role: "developer",
+            content: process.env.DEV_INSTRUCTION_STRING,
           },
         ],
+        store: true,
       });
 
       const revised =
         resp && resp.output_text ? resp.output_text : "(수정 실패)";
+
+      // 결과도 assistant 아이템으로 쌓기
+      try {
+        await openai.conversations.items.create(conversationId, {
+          role: "assistant",
+          content: [{ type: "output_text", text: revised }],
+        });
+      } catch (e2) {
+        console.error("Add assistant item error:", e2);
+      }
+
       if (r.counselorId) {
         io.to(r.counselorId).emit("ai_draft", {
           text: revised,
@@ -260,23 +309,36 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 상담사 → 본 채팅으로 최종 메시지 전송
-  socket.on("counselor_send_final", (text) => {
-    const data = socket.data || {};
+  // 상담사 → 본 채팅 전송(assistant로 기록도 남김)
+  socket.on("counselor_send_final", async (text) => {
+    const data = socket.data;
     const sName = data.name;
     const sRoom = data.room;
     const sRole = data.role;
     if (sRole !== "counselor" || !sRoom || !text) return;
+
     io.to(sRoom).emit("message", {
       name: sName,
       role: "counselor",
-      text: text,
+      text,
       ts: Date.now(),
     });
+
+    const r = ensureRoom(sRoom);
+    if (r.conversationId) {
+      try {
+        await openai.conversations.items.create(r.conversationId, {
+          role: "assistant",
+          content: [{ type: "output_text", text }],
+        });
+      } catch (e) {
+        console.error("Add final assistant item error:", e);
+      }
+    }
   });
 
   socket.on("disconnect", () => {
-    const data = socket.data || {};
+    const data = socket.data;
     const sName = data.name;
     const sRoom = data.room;
     const sRole = data.role;
@@ -286,13 +348,12 @@ io.on("connection", (socket) => {
     if (sRole === "counselor" && r.counselorId === socket.id)
       r.counselorId = null;
     io.to(sRoom).emit("system", {
-      text:
-        (sName || "익명") + "님(" + (sRole || "알수없음") + ")이 퇴장했습니다.",
+      text: `${sName || "익명"}님(${sRole || "알수없음"})이 퇴장했습니다.`,
     });
   });
 });
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log("http://localhost:" + PORT);
+  console.log(`http://localhost:${PORT}`);
 });

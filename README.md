@@ -1,14 +1,14 @@
-# Product Prototype (AI-Assisted Counseling Platform)
+# MVP - Minimum Viable Product - for my Startup (AI-Assisted Counseling Platform)
 
-A counseling platform prototype - based on Byron Katie's "The Work" methodology with AI assistance.
+A prototype counseling platform that applies Byron Katie’s The Work methodology with AI assistance.
 
 ## Overview
 
-- Counseling platform which implements Byron Katie's "The Work"
-- AI assistance powered by OpenAI Responses API
-- Inspired by the concept of "Pretotyping" from "The Right It" by Alberto Savoia
-- Minimal feature set required only for demand validation
-- No databases, No login/logout
+- Implements Byron Katie’s The Work
+- AI assistance powered by OpenAI **Responses API**
+- Inspired by the book _The Right It_ (Alberto Savoia)
+- Minimal feature set focused on demand validation
+- No database, no authentication(login/logout)
 
 ## Tech Stack
 
@@ -29,7 +29,7 @@ npm install
 2. Set up environment variables:
 
 ```bash
-cp .env.example .env
+cp .env.sample .env
 # Edit .env with your OpenAI API key
 ```
 
@@ -41,13 +41,13 @@ npm start
 
 ## App Flow (Routes)
 
-- `POST /create` – Generate a 20-char room code (shown **once**), save to session, optional immediate enter
-- `POST /enter` – Join with a received code, save to session
-- `GET /room` – Render counselor/client view by session (room code never shown in UI)
+- `POST /create` – Generate a 20-char room code (shown **once**), saves it to the session, optionally proceed to enter
+- `POST /enter` – Joins an existing room with the provided code; saves state to the session
+- `GET /room` – Renders the counselor/client view from the session (the room code is never shown in the UI)
 
-> For production, use a persistent session store (e.g., Redis, MongoDB) and secure cookies.
+> For production, use a persistent session store (e.g., Redis or MongoDB) and secure cookies.
 
-## Note
+## Notes
 
-This is a "pretotype" - a smaller version of an MVP(Minimum Viable Product).
-For fast demand validation with limited resources, only minimal features included.
+- For fast demand validation with limited resources, only minimal features included.
+- This MVP will follow a Discord user test using _The Work_ assistant chatbot.
