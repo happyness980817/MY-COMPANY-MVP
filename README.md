@@ -1,10 +1,10 @@
 # MVP - Minimum Viable Product - for my Startup (AI-Assisted Counseling Platform)
 
-A prototype counseling platform that applies Byron Katie’s The Work methodology with AI assistance.
+A prototype counseling platform that applies Byron Katie’s _The Work_ methodology with AI assistance.
 
 ## Overview
 
-- Implements Byron Katie’s The Work
+- Implements Byron Katie’s _The Work_
 - AI assistance powered by OpenAI **Responses API**
 - Inspired by the book _The Right It_ (Alberto Savoia)
 - Minimal feature set focused on demand validation
