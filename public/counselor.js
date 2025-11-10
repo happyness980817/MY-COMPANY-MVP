@@ -8,45 +8,48 @@ socket.emit("join", { name: name, room: room, role: "counselor" });
 const messagesEl = document.getElementById("messages");
 const chatInputEl = document.getElementById("message");
 const sendBtn = document.getElementById("send");
-const genAiBtn = document.getElementById("gen-ai");
 const draftEl = document.getElementById("draft");
 const instructionEl = document.getElementById("instruction");
 const refineBtn = document.getElementById("refine");
 const useDraftBtn = document.getElementById("use-draft");
 const aiStatusEl = document.getElementById("ai-status");
+const genBtn = document.getElementById("gen-ai"); // ★ AI 응답 생성 버튼
 
-sendBtn.addEventListener("click", () => {
+// 본 채팅에 상담사 메시지 전송
+sendBtn.addEventListener("click", function () {
   const txt = (chatInputEl.value || "").trim();
   if (!txt) return;
   socket.emit("counselor_send_final", txt);
   chatInputEl.value = "";
 });
 
-// 새로 추가: AI 응답 생성 버튼
-genAiBtn.addEventListener("click", () => {
+// AI 응답 생성 버튼 → 서버에 counselor_generate 요청
+genBtn.addEventListener("click", function () {
   aiStatusEl.textContent = "AI 응답 생성 중...";
   socket.emit("counselor_generate");
 });
 
-socket.on("message", (d) => {
+socket.on("message", function (d) {
   const roleLabel = d.role ? " (" + d.role + ")" : "";
   append(d.name + roleLabel + ": " + d.text);
 });
-socket.on("system", (d) => {
+
+socket.on("system", function (d) {
   append("[시스템] " + d.text);
 });
 
-socket.on("ai_draft", (d) => {
+socket.on("ai_draft", function (d) {
   draftEl.textContent = d && d.text ? d.text : "";
   const ts = d && d.ts ? d.ts : Date.now();
   aiStatusEl.textContent = "AI 초안 도착: " + new Date(ts).toLocaleString();
 });
-socket.on("ai_error", (err) => {
+
+socket.on("ai_error", function (err) {
   const msg = err && err.message ? err.message : "알 수 없는 오류";
   aiStatusEl.textContent = "AI 오류: " + msg;
 });
 
-refineBtn.addEventListener("click", () => {
+refineBtn.addEventListener("click", function () {
   const inst = (instructionEl.value || "").trim();
   if (!inst) {
     alert("수정/재생성 지시를 입력해 주세요.");
@@ -56,7 +59,7 @@ refineBtn.addEventListener("click", () => {
   socket.emit("counselor_refine", { instruction: inst });
 });
 
-useDraftBtn.addEventListener("click", () => {
+useDraftBtn.addEventListener("click", function () {
   const txt = (draftEl.textContent || "").trim();
   if (!txt) {
     alert("보낼 초안이 없습니다.");
