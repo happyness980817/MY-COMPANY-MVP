@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import OpenAI from "openai";
 import session from "express-session";
 import { setupRoutes } from "./routers/routes.js";
-import { setupSockets } from "./controllers/socket/socketHub.js";
+import { setupSockets } from "./sockets/socketHub.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,7 +16,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const modelName = process.env.OPENAI_RESPONSE_MODEL || "gpt-5.1";
+const model = "gpt-5.1";
 
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET,
@@ -32,7 +32,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 setupRoutes(app, openai);
-setupSockets(io, openai, modelName);
+setupSockets(io, openai, model);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

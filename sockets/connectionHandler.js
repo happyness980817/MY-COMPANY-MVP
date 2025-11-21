@@ -1,4 +1,4 @@
-import { ensureRoom } from "../roomsController.js";
+import { ensureRoom } from "../services/roomService.js";
 
 export function handleConnection(socket, io) {
   const sess = socket.request && socket.request.session ? socket.request.session : null;
@@ -35,4 +35,3 @@ export function handleDisconnect(socket, io) {
     text: `${sName || "익명"}님(${sRole || "알수없음"})이 퇴장했습니다.`,
   });
 }
-

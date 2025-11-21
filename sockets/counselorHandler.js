@@ -1,4 +1,4 @@
-import { ensureRoom } from "../roomsController.js";
+import { ensureRoom } from "../services/roomService.js";
 
 export async function handleCounselorGenerate(socket, io, openai, model) {
   const data = socket.data || {};
@@ -178,4 +178,3 @@ export async function handleCounselorSendFinal(socket, io, openai, text) {
     }
   }
 }
-

@@ -1,4 +1,4 @@
-import { ensureRoom, rooms } from "../controllers/roomsController.js";
+import { ensureRoom, rooms } from "../services/roomService.js";
 
 export function setupRoutes(app, openai) {
   app.get("/", (_, res) => {
@@ -64,4 +64,3 @@ function generateRoomCode(len = 20) {
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
 }
-
