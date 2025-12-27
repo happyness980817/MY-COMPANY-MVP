@@ -31,18 +31,17 @@ function send() {
 }
 
 function append(line) {
-  const html = `<div class="text"><span>${esc(
-    line
-  )}</span><span class="muted"> ${new Date().toLocaleString()}</span></div>`;
-  messagesEl.insertAdjacentHTML("beforeend", html);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
+  const wrapper = document.createElement("div");
+  wrapper.className = "text";
 
-function esc(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+  const textSpan = document.createElement("span");
+  textSpan.textContent = line;
+
+  const timeSpan = document.createElement("span");
+  timeSpan.className = "muted";
+  timeSpan.textContent = ` ${new Date().toLocaleString()}`;
+
+  wrapper.append(textSpan, timeSpan);
+  messagesEl.appendChild(wrapper);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
 }

@@ -1,4 +1,10 @@
-import { ensureRoom } from "../services/roomService.js";
+import { ensureRoom } from "../services/room.js";
+import {
+  addAssistantItem,
+  addUserItem,
+  generateDraft,
+  refineDraft,
+} from "../services/ai.js";
 
 export async function handleCounselorGenerate(socket, io, openai, model) {
   const data = socket.data || {};
@@ -25,34 +31,16 @@ export async function handleCounselorGenerate(socket, io, openai, model) {
   }
 
   try {
-    const resp = await openai.responses.create({
+    const draft = await generateDraft(openai, {
       model,
-      instructions: process.env.INSTRUCTION_STRING,
-      conversation: { id: conversationId },
-      input: [
-        {
-          role: "user",
-          content: `내담자 최신 메시지 참조: """${lastClientText}"""`,
-        },
-        {
-          role: "developer",
-          content: process.env.DEV_INSTRUCTION_STRING,
-        },
-      ],
-      store: true,
+      conversationId,
+      instructionString: process.env.INSTRUCTION_STRING,
+      devInstructionString: process.env.DEV_INSTRUCTION_STRING,
+      clientText: lastClientText,
     });
 
-    const draft = resp && resp.output_text ? resp.output_text : "(응답 생성 실패)";
-
     try {
-      await openai.conversations.items.create(conversationId, {
-        items: [
-          {
-            role: "assistant",
-            content: [{ type: "output_text", text: draft }],
-          },
-        ],
-      });
+      await addAssistantItem(openai, conversationId, draft);
     } catch (e2) {
       console.error("Add assistant item error:", e2);
     }
@@ -64,12 +52,19 @@ export async function handleCounselorGenerate(socket, io, openai, model) {
       });
   } catch (err) {
     const msg = err.message || "AI 응답 생성 오류";
-    if (room.counselorId) io.to(room.counselorId).emit("ai_error", { message: msg });
+    if (room.counselorId)
+      io.to(room.counselorId).emit("ai_error", { message: msg });
     console.error(err);
   }
 }
 
-export async function handleCounselorRefine(socket, io, openai, model, payload) {
+export async function handleCounselorRefine(
+  socket,
+  io,
+  openai,
+  model,
+  payload
+) {
   const data = socket.data || {};
   const sName = data.name;
   const sCode = data.code;
@@ -88,48 +83,22 @@ export async function handleCounselorRefine(socket, io, openai, model, payload) 
   }
 
   try {
-    await openai.conversations.items.create(conversationId, {
-      items: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: `상담사 지시: """${instruction}"""`,
-            },
-          ],
-        },
-      ],
-    });
+    await addUserItem(
+      openai,
+      conversationId,
+      `상담사 지시: """${instruction}"""`
+    );
 
-    const resp = await openai.responses.create({
+    const revised = await refineDraft(openai, {
       model,
-      instructions: `${process.env.INSTRUCTION_STRING} 상담사의 피드백을 반영해 2~4문장으로 개선하세요.`,
-      conversation: { id: conversationId },
-      input: [
-        {
-          role: "user",
-          content: `내담자 메시지: """${lastClientText || ""}"""`,
-        },
-        {
-          role: "developer",
-          content: process.env.DEV_INSTRUCTION_STRING,
-        },
-      ],
-      store: true,
+      conversationId,
+      instructionString: process.env.INSTRUCTION_STRING,
+      devInstructionString: process.env.DEV_INSTRUCTION_STRING,
+      lastClientText: lastClientText || "",
     });
-
-    const revised = resp && resp.output_text ? resp.output_text : "(수정 실패)";
 
     try {
-      await openai.conversations.items.create(conversationId, {
-        items: [
-          {
-            role: "assistant",
-            content: [{ type: "output_text", text: revised }],
-          },
-        ],
-      });
+      await addAssistantItem(openai, conversationId, revised);
     } catch (e2) {
       console.error("Add assistant item error:", e2);
     }
@@ -143,7 +112,8 @@ export async function handleCounselorRefine(socket, io, openai, model, payload) 
     }
   } catch (err) {
     const msg = err.message || "AI 수정 오류";
-    if (room.counselorId) io.to(room.counselorId).emit("ai_error", { message: msg });
+    if (room.counselorId)
+      io.to(room.counselorId).emit("ai_error", { message: msg });
     console.error(err);
   }
 }
@@ -165,14 +135,7 @@ export async function handleCounselorSendFinal(socket, io, openai, text) {
   const room = ensureRoom(sCode);
   if (room.conversationId) {
     try {
-      await openai.conversations.items.create(room.conversationId, {
-        items: [
-          {
-            role: "assistant",
-            content: [{ type: "output_text", text }],
-          },
-        ],
-      });
+      await addAssistantItem(openai, room.conversationId, text);
     } catch (e) {
       console.error("Add final assistant item error:", e);
     }

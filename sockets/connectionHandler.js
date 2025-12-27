@@ -1,4 +1,4 @@
-import { ensureRoom } from "../services/roomService.js";
+import { ensureRoom } from "../services/room.js";
 
 export function handleConnection(socket, io) {
   const sess = socket.request && socket.request.session ? socket.request.session : null;

@@ -16,15 +16,16 @@ block content
 
       section.panel
         h3 AI 보조 패널(상담사에게만 표시됩니다)
+        label(for="draft") AI 응답
+        pre#draft.draft (여기에 AI 응답이 표시됩니다)
+        #ai-status.muted
         .row
           button#gen-ai(type="button") AI 응답 생성
-        label(for="draft") AI 초안
-        pre#draft.draft (여기에 AI 초안이 표시됩니다)
+          button#use-draft(type="button") AI 응답 전송
         textarea#instruction(rows="4" placeholder="AI에 재생성 지시 전송")
         .row
           button#refine(type="button") AI에게 수정 지시 
-          button#use-draft(type="button") 초안을 본 채팅으로 전송
-        #ai-status.muted
+        
 
     script(src="/socket.io/socket.io.js")
     script(src="/counselor.js")
